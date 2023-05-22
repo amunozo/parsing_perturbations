@@ -1,8 +1,8 @@
-from tagger import train
+from tb import train
 import sys
 
-treebank = sys.argv[1]
-tags = sys.argv[2]
+tags = sys.argv[1]
+batch = sys.argv[2]
 device = sys.argv[3]
 
 if tags == 'xpos':
@@ -25,5 +25,11 @@ else:
     ]
 
 if __name__ == '__main__':
-    #for treebank in treebanks:
-    train(treebank, tags, device)
+    midpoint = len(treebanks)//2
+    if batch == 'a':
+        treebanks = treebanks[:midpoint]
+    elif batch == 'b':
+        treebanks = treebanks[midpoint:]
+
+    for treebank in treebanks:
+        train(treebank, tags, device)

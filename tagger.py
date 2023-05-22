@@ -1,8 +1,9 @@
 import os
-from sl import prepare_data
+from utils import prepare_data
 from sklearn.metrics import accuracy_score
 import tempfile
-
+import numpy as np
+import sys
 
 ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
 
@@ -31,16 +32,16 @@ def train(treebank, tags, device, learning_rate=0.02):
     
     encoded_folder = model_folder + 'seq_files/'
     for filename in os.listdir(encoded_folder):
-        if filename.endswith('train.seq'):
+        if filename.endswith('ud-train.seq'):
             train_seq = encoded_folder + filename
 
-        elif filename.endswith('dev.seq'):
+        elif filename.endswith('ud-dev.seq'):
             dev_seq = encoded_folder + filename
         
-        elif filename.endswith('test.seq'):
+        elif filename.endswith('ud-test.seq'):
             test_seq = encoded_folder + filename
     
-    #  Remove the last column of the seq files
+    # Remove the last column of the seq files
     with open(train_seq, 'r') as f:
         train = f.read().splitlines()
         # Remove third column
@@ -76,7 +77,6 @@ def train(treebank, tags, device, learning_rate=0.02):
         test += '\n'
         with open(test_seq, 'w') as f:
             f.write(test)
-
 
     for filename in os.listdir(ud_folder + treebank):
             if filename.endswith('dev.conllu'):
@@ -156,35 +156,44 @@ def train(treebank, tags, device, learning_rate=0.02):
     execute_main = 'CUDA_VISIBLE_DEVICES="{}" python "{}" --config "{}" --monitoring "{}"'.format(
         device, main_py, config_file, monitoring
         )
-    print(execute_main)
     os.system(execute_main)
+    
+def conllu_to_seq(file, tags):
+    """
+    Transform a single conllu file into a named temporary file in seq format
+    """    
+    if tags == 'none':
+        tags = 'upos'
 
-def predict(treebank, tags, device=0, perturbation=0):
+    # Encode the files
+    encoding_script = 'dep2label/encode_dep2labels.py'
+    seq_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+
+    encoding_command = 'python "{}" --input "{}" --output "{}"  --encoding "2-planar-brackets-greedy" --mtl "3-task" --tag "{}"'.format(
+        encoding_script, file, seq_file.name, tags
+    )
+    os.system(encoding_command)
+    return seq_file
+
+def predict_tags(treebank, tags, gold_conllu_file, device=0, perturbation=0):
     """
     Predict the PoS tags of a test file using a trained tagger given the treebank and the perturbation percentage
     """
-    if tags == 'none':
-        model_folder = 'tagger_models/none_models/' + treebank + '/'
-    else:
-        model_folder = 'tagger_models/tags_models/'
-        if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
-        elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
-        elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+    model_folder = 'tagger_models/tags_models/'
+    if tags == 'upos':
+        model_folder += 'UPOS/' + treebank + '/'
+    elif tags == 'xpos':
+        model_folder += 'XPOS/' + treebank + '/'
+    elif tags == 'feats':
+        model_folder += 'FEATS/' + treebank + '/'
     
     model = model_folder + '/mod.model'
     model_dset = model_folder + '/mod.dset'
-    # Define the test.seq file 
-    encoded_folder = model_folder + 'seq_files/'
-    for filename in os.listdir(encoded_folder):
-        if filename.endswith('test.seq'):
-            test_seq = encoded_folder + filename
 
     ncrf_file = ('dep2label/main.py')
-    test_pred = test_seq.replace('test.seq', 'test.pred')
-
+    
+    test_seq_gold = conllu_to_seq(gold_conllu_file, tags)
+    test_seq_pred = model_folder + '/seq_files/test_pred.seq'
     # Execute the main.py file and predict the tags
     config ='''### Decode ###
         status=decode
@@ -192,119 +201,111 @@ def predict(treebank, tags, device=0, perturbation=0):
         decode_dir={}
         dset_dir={}
         load_model_dir={}
-    '''.format(test_seq, test_pred, model_dset, model)
+    '''.format(test_seq_gold.name, test_seq_pred, model_dset, model)
 
     config_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-
     with open(config_file.name, 'w') as f:
         f.write(config)
-    
     os.system('python {} --config {}'.format(ncrf_file, config_file.name))
     
-    #with open(test_pred, 'r') as f:
-    #    pred = f.read().splitlines()
-    #
-    #for i in range(pred):
-    #    if pred[i] == '-BOS-':
-    #        pred[i] = '-BOS-\t-BOS-'
-    #    elif pred[i] == '-EOS-':
-    #        pred[i] = '-EOS-\t-EOS-'
+    # Add the parsing to the test.pred file
+    # Read tags
+    with open(test_seq_pred, 'r') as f:
+        pred_tags = f.read().split('\n\n')
+    with open(gold_conllu_file, 'r') as f:
+        gold_conllu_text = f.read().split('\n\n')
+    pred_conllu_text = []
 
-    #with open(test_seq, 'r') as f:
-    #    test = f.read().splitlines()
+    tag_dic = {'upos': 3, 'xpos': 4, 'feats': 5}
+    if len(pred_tags) == len(gold_conllu_text):
+        for i in range(len(pred_tags)):
+            sentence_tags = pred_tags[i] # text of sentence i in seq format
+            sentence_tags = sentence_tags.split('\n') # rows of sentence i in seq format
+            sentence_tags = [item.split('\t') for item in sentence_tags]
+            sentence_tags = [item[1] for item in sentence_tags if len(item)>1 and item[1] not in {'-BOS-', '-EOS-'}] 
+
+            sentence_conllu = gold_conllu_text[i] # text of sentence i in conllu format
+            sentence_conllu = sentence_conllu.split('\n') # rows of sentence i in conllu format
+            # only consider lines that start with a number
+            sentence_conllu = [line.split('\t') for line in sentence_conllu]
+            sentence_conllu = [line for line in sentence_conllu if line[0].isdigit()]
+            for j in range(len(sentence_tags)):
+                line = sentence_conllu[j]
+                line[tag_dic[tags]] = sentence_tags[j]
+                sentence_conllu[j] = '\t'.join(line)
+
+            # quick fix for weird problem I don't understand why's happening
+            for j in range(len(sentence_conllu)):
+                if type(sentence_conllu[j]) == list:
+                    sentence_conllu[j] = '\t'.join(sentence_conllu[j])
+
+            pred_conllu_text.append('\n'.join(sentence_conllu))
     
-    #TODO: CONLLU PART
+        pred_conllu_text = '\n\n'.join(pred_conllu_text)
+        pred_conllu_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        with open(pred_conllu_file.name, 'w') as f:
+            f.write(pred_conllu_text)
+        
+    else:
+        print('Error: the number of sentences in the gold and predicted files is different')            
 
-def evaluate(treebank, tags, device=0):
+    pred_conllu_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+    with open(pred_conllu_file.name, 'w') as f:
+        f.write(pred_conllu_text)
+
+    # Note: we should maybe return the test_seq_pred as a temporary file
+
+    return pred_conllu_file, test_seq_pred
+
+def evaluate(treebank, tags, test_conllu, test_seq_pred, device=0):
     """
     Evaluate the accuracy of a PoS tagger using the predicted and original test files
     """
-    if tags == 'none':
-        model_folder = 'tagger_models/none_models/' + treebank + '/'
-        features = 'False'
-    
-    else:
-        model_folder = 'tagger_models/tags_models/'
-        features = 'True'
-        if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
-        elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
-        elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
-    
-    model = model_folder + 'mod.model'
-    model_dset = model_folder + 'mod.dset'
-    encoded_folder = model_folder + 'seq_files/'
-    for filename in os.listdir(encoded_folder):
-        if filename.endswith('test.seq'):
-            test_gold = encoded_folder + filename
-    
-    test_predicted = test_gold.replace('.seq', '.pred')
+    model_folder = 'tagger_models/tags_models/'
 
-    predict(treebank, tags, device)
+    if tags == 'upos':
+        model_folder += 'UPOS/' + treebank + '/'
+    elif tags == 'xpos':
+        model_folder += 'XPOS/' + treebank + '/'
+    elif tags == 'feats':
+        model_folder += 'FEATS/' + treebank + '/'
+    
+    model_folder = 'tagger_models/tags_models/'
+    if tags == 'upos':
+        model_folder += 'UPOS/' + treebank + '/'
+    elif tags == 'xpos':
+        model_folder += 'XPOS/' + treebank + '/'
+    elif tags == 'feats':
+        model_folder += 'FEATS/' + treebank + '/'
+        
+    # Load the gold tags from the test_conllu file
+    
+    try:
+        with open(test_conllu.name, 'r') as f:
+            list_gold = f.read().splitlines()
+    except:
+        with open(test_conllu, 'r') as f:
+            list_gold = f.read().splitlines()
+            
+    tags_dic = {'upos': 3, 'xpos': 4, 'feats': 5}
+    list_gold = [row.split('\t')[tags_dic[tags]] for row in list_gold if row.split('\t')[0].isdigit()]
 
-    # Separate the tags and create two lists
-    with open(test_gold, 'r') as f:
-        list_gold = f.read().split('\n')
-    list_gold = [row.split('\t') for row in list_gold if row.split('\t') != ['']]
-    list_gold = [row[1] for row in list_gold if row[1] not in {'-EOS-', '-BOS-'}]
-
-    with open(test_predicted, 'r') as f:
+    test_seq_pred = model_folder + '/seq_files/test_pred.seq'
+    with open(test_seq_pred, 'r') as f:
         list_predicted = f.read().split('\n')
     list_predicted = [row.split('\t') for row in list_predicted if row.split('\t') != ['']]
-    list_predicted = [row[1] for row in list_predicted if row[1] not in {'-EOS-', '-BOS-'}]
+    list_predicted = [row[1] for row in list_predicted if row[0] not in {'-EOS-', '-BOS-'}]
 
     try:
         accuracy = 100*accuracy_score(list_gold,list_predicted)
+        print('Accuracy: {:.2f}%'.format(accuracy))
+
     except ValueError:
         print([item for item in list_gold if item not in list_predicted])
-        print('Inconsistent number of samples between predicted and gold files in {}'.format(treebank))
+        print('Inconsistent number of samples between predicted and gold files')
         return None
-    
-    with open('test_accuracy.txt', 'a') as f:
-        f.write('{},{}: {}'.format(treebank, tags, accuracy, 2))
-        f.write('\n')
 
     return accuracy
 
-def avg_accuracy(treebanks, tags, perturbation=0, device=0):
-    """
-    Calculate the average accuracy of a PoS tagger over all treebanks
-    """
-    accuracy = []
-    for treebank in treebanks:
-        accuracy.append(evaluate(treebank, tags, device))
-
-    accuracy = [float(item) for item in accuracy if item is not None]
-    avg = round(sum(accuracy)/len(accuracy), 2)
-
-    with open('test_accuracy.txt', 'a') as f:
-        f.write('Average {}: {}'.format(tags, avg, 2))
-        f.write('\n')
-        f.write('\n')
-
-    return avg
-
 if __name__ == '__main__':
-    treebanks = [
-        'UD_Afrikaans-AfriBooms', 'UD_Basque-BDT', 'UD_English-EWT', 'UD_Finnish-TDT', 'UD_German-GSD',
-        'UD_Indonesian-GSD', 'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Hungarian-Szeged',
-        'UD_Polish-LFG', 'UD_Spanish-AnCora', 'UD_Swedish-LinES', 'UD_Turkish-Penn'
-    ]
-    print(avg_accuracy(treebanks, 'feats', 0, 0))
-
-    treebanks = [
-        'UD_Afrikaans-AfriBooms', 'UD_English-EWT', 'UD_Finnish-TDT', 'UD_German-GSD',
-        'UD_Indonesian-GSD', 'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Maltese-MUDT',
-        'UD_Polish-LFG', 'UD_Spanish-AnCora', 'UD_Swedish-LinES'
-    ]
-    print(avg_accuracy(treebanks, 'xpos', 0, 0))
-
-    treebanks = [
-        'UD_Afrikaans-AfriBooms', 'UD_Basque-BDT', 'UD_English-EWT', 'UD_Finnish-TDT', 'UD_German-GSD',
-        'UD_Indonesian-GSD', 'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Maltese-MUDT', 'UD_Hungarian-Szeged',
-        'UD_Polish-LFG', 'UD_Spanish-AnCora', 'UD_Swedish-LinES', 'UD_Turkish-Penn'
-    ]
-
-    print(avg_accuracy(treebanks, 'upos', 0, 0))
+    print(evaluate('UD_English-EWT','upos'))

@@ -1,49 +1,13 @@
 import os
-
+from perturbate import perturbate_file
+import tagger
+import numpy as np
+from utils import prepare_data
+import tempfile
 
 ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
-
-def prepare_data(treebank, tags, model_folder):
-    """
-    Encode a CoNLLu file in a format usable by the NCRF++ given a type of tags and a UD treebank
-    """
-    if not os.path.exists(model_folder):
-        os.makedirs(model_folder)
     
-    # Select train and dev file
-    files = []
-    for filename in os.listdir(ud_folder + treebank):
-        if filename.endswith('train.conllu'):
-            train_conllu = ud_folder + treebank + '/' + filename
-            train = filename
-            print(filename)
-            files.append((train_conllu, train))
-        elif filename.endswith('dev.conllu'):
-            dev_conllu = ud_folder + treebank + '/' + filename
-            dev = filename
-            files.append((dev_conllu, dev))
-        elif filename.endswith('test.conllu'):
-            test_conllu = ud_folder + treebank + '/' + filename
-            test = filename
-            files.append((test_conllu, test))
-
-    if tags == 'none':
-        tags = 'upos'
-
-    # Encode the files
-    encoding_script = 'dep2label/encode_dep2labels.py'
-    encoded_folder = model_folder + 'seq_files/'
-    if not os.path.exists(encoded_folder):
-        os.makedirs(encoded_folder)
-    
-    for file in files:
-        encoding_command = 'python "{}" --input "{}" --output "{}"  --encoding "2-planar-brackets-greedy" --mtl "3-task" --tag "{}"'.format(
-            encoding_script, file[0], encoded_folder + file[1].replace('conllu', 'seq'), tags
-        )
-        os.system(encoding_command)
-    
-
-def train(treebank, tags, device, encoding='2-planar-brackets-greedy', learning_rate = 0.02):
+def train(treebank, tags, device, encoding='2-planar-brackets-greedy', epochs=10, learning_rate = 0.02):
     """
     Train a SL dependency parser using a UD treebank
     """
@@ -135,7 +99,7 @@ def train(treebank, tags, device, encoding='2-planar-brackets-greedy', learning_
         #clip=
 
         ###MTL setup###
-        index_of_main_tasks=0,1,2,3
+        index_of_main_tasks=0,1,2
         tasks=3
         tasks_weights=1|1|1
         encoding=2-planar-brackets-greedy
@@ -156,6 +120,205 @@ def train(treebank, tags, device, encoding='2-planar-brackets-greedy', learning_
     print(execute_main)
     os.system(execute_main)
 
+def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, encoding='2-planar-brackets-greedy', device=0):
 
+    """
+    Evaluate a SL parser on the perturbed test set of a treebank using a certain percentage of
+    perturbed words and averaging the result over a certain number of epochs
+    """
+    # Locate test file
+    if tags == 'none':
+        model_folder = 'sl_models/none_models/' + treebank + '/'
+    
+    else:
+        model_folder = 'sl_models/tags_models/'
+        if tags == 'upos':
+            model_folder += 'UPOS/' + treebank + '/'
+        elif tags == 'xpos':
+            model_folder += 'XPOS/' + treebank + '/'
+        elif tags == 'feats':
+            model_folder += 'FEATS/' + treebank + '/'
+    
+    model = model_folder + 'mod'    
+    encoded_folder = model_folder + 'seq_files/'
+
+    for filename in os.listdir(ud_folder + treebank + '/'):
+        if filename.endswith('ud-test.conllu'):
+            gold_conllu = ud_folder + treebank + '/' + filename
+
+    #for filename in os.listdir(encoded_folder):
+    #    if filename.endswith('ud-test.seq'):
+    #        test_seq_gold = encoded_folder + filename
+    
+
+    ncrf_dir = 'dep2label'
+    test_seq_pred = model_folder + '/seq_files/test_pred.seq'
+
+    # Perturbate the test set
+    uas_list = []
+    las_list = []
+    acc_list = []
+
+    if perturbation != 0:
+        for i in range(epochs):
+            if tags != 'none':
+                # Predicts PoS tags; it should give a list with lists of predicted tags to insert in the conllx file
+                if perturbed_tagging == 'perturbed':
+                    perturbed_test_conllu = perturbate_file(treebank, perturbation)
+                    predicted_test_conllu, test_seq_pred = tagger.predict_tags(treebank, tags, perturbed_test_conllu.name)
+                else:
+                    predicted_test_conllu, test_seq_pred = tagger.predict_tags(treebank, tags, gold_conllu)
+                    predicted_test_conllu = perturbate_file(treebank, perturbation, predicted_test_conllu.name)
+                
+                acc = tagger.evaluate(treebank, tags, gold_conllu, test_seq_pred)
+                
+                # Measure tagger accuracy
+                acc_list.append(acc)
+            
+            else:
+                predicted_test_conllu = perturbate_file(treebank, perturbation)
+                acc = 100
+            
+            test_seq_perturbed = tagger.conllu_to_seq(predicted_test_conllu.name, tags)
+
+            # Get UAS and LAS
+            output_conllu = tempfile.NamedTemporaryFile(mode='w', delete=False)
+            output_seq = tempfile.NamedTemporaryFile(mode='w', delete=False)
+
+            decode_py = 'dep2label/decode.py'
+            execute_decode = 'python  "{}" --test "{}" --gold "{}" --model "{}" --gpu True \
+                --output "{}" --encoding "{}" --ncrf "{}" --decode "{}"'.format(
+                    decode_py,
+                    test_seq_perturbed.name,
+                    predicted_test_conllu.name,
+                    model,
+                    output_seq.name,
+                    encoding,
+                    ncrf_dir,
+                    output_conllu.name
+            )
+
+            # Get the score output
+            score = os.popen(execute_decode).read()
+
+            UAS = score.split('\t')[0]
+            LAS = score.split('\t')[1].replace('\n', '')
+            uas_list.append(float(UAS))
+            las_list.append(float(LAS))
+            acc_list.append(acc)
+            print('UAS: ', UAS, 'LAS: ', LAS, 'ACC: ', acc)
+
+    else:
+        epochs = 1
+        if tags != 'none':
+            predicted_test_conllu, test_seq_pred = tagger.predict_tags(treebank, tags, gold_conllu)
+            acc = tagger.evaluate(treebank, tags, gold_conllu, test_seq_pred)
+            acc_list.append(acc)
+        else:
+            acc = 100
+            acc_list.append(acc)
+            # predicted_test_conllu = gold_conllu
+            # pass into a temp file to get homogeinity
+            predicted_test_conllu = tempfile.NamedTemporaryFile(mode='w', delete=False)
+            with open(gold_conllu, 'r') as f:
+                predicted_test_conllu.write(f.read())
+
+
+        test_seq_perturbed = tagger.conllu_to_seq(predicted_test_conllu.name, tags)
+        
+        # Get UAS and LAS
+        output_conllu = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        output_seq = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        
+        decode_py = 'dep2label/decode.py'
+        execute_decode = 'python  "{}" --test "{}" --gold "{}" --model "{}" --gpu True \
+            --output "{}" --encoding "{}" --ncrf "{}" --decode "{}"'.format(
+                decode_py,
+                test_seq_perturbed.name,
+                predicted_test_conllu.name,
+                model,
+                output_seq.name,
+                encoding,
+                ncrf_dir,
+                output_conllu.name
+        )
+
+        # Get the score output
+        score = os.popen(execute_decode).read()
+        with open(output_conllu.name, 'r') as f:
+            print(f.read()[:100])
+
+        UAS = score.split('\t')[0]
+        LAS = score.split('\t')[1].replace('\n', '')
+
+        uas_list.append(float(UAS))
+        las_list.append(float(LAS))
+        acc_list.append(acc)
+        print('UAS: ', UAS, 'LAS: ', LAS, 'ACC: ', acc)      
+
+    average_uas = sum(uas_list) / len(uas_list)
+    average_las = sum(las_list) / len(las_list)
+    average_acc = sum(acc_list) / len(acc_list)
+    std_uas = np.std(uas_list)
+    std_las = np.std(las_list)
+    std_acc = np.std(acc_list)
+
+    if tags != 'none':    
+        average_acc = sum(acc_list) / len(acc_list)
+        std_acc = np.std(acc_list)
+    else:
+        average_acc = np.nan
+        std_acc = 0
+    
+    print("Average UAS: ", round(average_uas,2), "Standard deviation: ", round(std_uas,2))
+    print("Average LAS: ", round(average_las,2), "Standard deviation: ", round(std_las,2))
+    print('')
+
+    # Create the .csv file if it doesn't exist
+    csv_file = 'scores.csv'
+    if not os.path.exists(csv_file):
+        with open(csv_file, 'w') as f:
+            f.write('Treebank,Parser,Tags,Perturbed tagging,Perturbation,UAS,UAS std,LAS,LAS std,Tagger acc,Tagger acc std,Epochs\n')
+
+    with open(csv_file, 'a') as f:
+        f.write('{},{},{},{},{},{},{},{},{},{},{},{}\n'.format(
+            treebank, 'SL', tags, perturbed_tagging, perturbation, average_uas, std_uas, average_las, std_las, average_acc, std_acc, epochs
+        )
+    )
 if __name__ == '__main__':
-    train('UD_Lithuanian-HSE', 'feats', 0)
+    for tags in ['none', 'upos', 'xpos', 'feats']:
+        if tags == 'xpos':
+            treebanks = [
+                'UD_Afrikaans-AfriBooms',
+                'UD_English-EWT', 
+                'UD_Finnish-TDT', 
+                'UD_German-GSD',
+                'UD_Indonesian-GSD', 
+                'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Maltese-MUDT',
+                'UD_Polish-LFG', 
+                'UD_Spanish-AnCora', 'UD_Swedish-LinES'
+    ]
+        elif tags == 'feats':
+            treebanks = [
+                'UD_Afrikaans-AfriBooms',
+                'UD_Basque-BDT', 'UD_English-EWT', 
+                'UD_Finnish-TDT', 'UD_German-GSD',
+                'UD_Indonesian-GSD',
+                'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Hungarian-Szeged',
+                'UD_Polish-LFG',
+                'UD_Spanish-AnCora', 'UD_Swedish-LinES', 'UD_Turkish-Penn'
+            ]
+        else:
+            treebanks = [
+                'UD_Afrikaans-AfriBooms', 
+                'UD_Basque-BDT', 
+                'UD_English-EWT', 
+                'UD_Finnish-TDT', 'UD_German-GSD',
+                'UD_Indonesian-GSD', 
+                'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Maltese-MUDT', 'UD_Hungarian-Szeged',
+                'UD_Polish-LFG',
+                'UD_Spanish-AnCora', 'UD_Swedish-LinES', 'UD_Turkish-Penn'
+    ]
+        for treebank in treebanks:        
+            for perturbation in range(0, 101, 10):
+                evaluate(treebank, tags, perturbation, 'perturbed', epochs=1)
