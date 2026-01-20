@@ -1,5 +1,11 @@
 import sys
-from tb import evaluate
+import os
+
+# Add the project root and src directory to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from src.sl import evaluate
 
 device = sys.argv[1]
 with open('errors.txt', 'w') as f:
@@ -76,4 +82,3 @@ for tags in [
                         except:
                             with open('errors.txt', 'a') as f:
                                 f.write(f'{treebank} {tags} {perturbation} {perturbed_tags} {device}\n')
-

@@ -1,6 +1,12 @@
 import sys
-from tagger import evaluate   
+import os
 import numpy as np
+
+# Add the project root and src directory to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from src.tagger import evaluate
 
 
 if __name__ == '__main__':

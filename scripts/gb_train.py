@@ -1,9 +1,14 @@
-from tb import train
 import sys
+import os
+
+# Add the project root and src directory to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from src.gb import train
 
 tags = sys.argv[1]
-batch = sys.argv[2]
-device = sys.argv[3]
+device = sys.argv[2]
 
 if tags == 'xpos':
     treebanks = [
@@ -25,11 +30,5 @@ else:
     ]
 
 if __name__ == '__main__':
-    midpoint = len(treebanks)//2
-    if batch == 'a':
-        treebanks = treebanks[:midpoint]
-    elif batch == 'b':
-        treebanks = treebanks[midpoint:]
-
     for treebank in treebanks:
         train(treebank, tags, device)

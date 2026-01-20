@@ -1,10 +1,11 @@
 import os
 import tempfile
-from perturbate import perturbate_file
 import numpy as np
-import tagger
+import src.tagger as tagger
+import src.const as const
+from src.perturbate import perturbate_file
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
 
 def conllu_to_conll(input_file, output_file, test=False) -> None:
     print(f"INFO: Converting {input_file} file to {output_file} file")
@@ -42,16 +43,16 @@ def train(treebank, tags, device):
     Train a SuPar dependency parser using a UD treebank
     """
     if tags == 'none':
-        model_folder = 'supar_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.SUPAR_MODELS, 'none_models', treebank) + '/'
     
     else:
-        model_folder = 'supar_models/tags_models/'
+        model_folder = os.path.join(const.SUPAR_MODELS, 'tags_models')
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
         
     if not os.path.exists(model_folder):
         os.makedirs(model_folder)
@@ -68,7 +69,7 @@ def train(treebank, tags, device):
         
     # Find word embeddings
     language = treebank.split('-')[0].replace('UD_', '').lower()
-    embeddings = 'embeddings/' + language
+    embeddings = os.path.join(const.EMBEDDINGS_FOLDER, language)
 
     if tags == 'upos':
         tags = 'tag'
@@ -96,16 +97,16 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, device=
     """
     # Locate test file
     if tags == 'none':
-        model_folder = 'supar_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.SUPAR_MODELS, 'none_models', treebank) + '/'
     
     else:
-        model_folder = 'supar_models/tags_models/'
+        model_folder = os.path.join(const.SUPAR_MODELS, 'tags_models')
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
 
     model = model_folder + 'mod.model'
 
@@ -217,7 +218,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, device=
     print('')
 
     # Create the .csv file if it doesn't exist
-    csv_file = 'scores.csv'
+    csv_file = const.SCORES_FILE
 
     if not os.path.exists(csv_file):
         with open(csv_file, 'w') as f:

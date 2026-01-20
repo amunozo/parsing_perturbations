@@ -1,5 +1,11 @@
-from sl import train
 import sys
+import os
+
+# Add the project root and src directory to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from src.sl import train
 
 tag = sys.argv[1]
 #batch = sys.argv[2]
@@ -8,13 +14,13 @@ device = sys.argv[2]
 tags = ['none', 'upos', 'xpos', 'feats']
 
 
-if tags == 'xpos':
+if tag == 'xpos':
     treebanks = [
         'UD_Afrikaans-AfriBooms', 'UD_English-EWT', 'UD_Finnish-TDT', 'UD_German-GSD',
         'UD_Indonesian-GSD', 'UD_Irish-IDT', 'UD_Lithuanian-HSE', 'UD_Maltese-MUDT',
         'UD_Polish-LFG', 'UD_Spanish-AnCora', 'UD_Swedish-LinES'
     ]
-elif tags == 'feats':
+elif tag == 'feats':
     treebanks = [
         'UD_Afrikaans-AfriBooms', 
         'UD_Basque-BDT', 'UD_English-EWT', 'UD_Finnish-TDT', 'UD_German-GSD',

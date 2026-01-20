@@ -1,6 +1,7 @@
 import os
+import src.const as const
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
 
 def prepare_data(treebank, tags, model_folder):
     """
@@ -30,7 +31,7 @@ def prepare_data(treebank, tags, model_folder):
         tags = 'upos'
 
     # Encode the files
-    encoding_script = 'dep2label/encode_dep2labels.py'
+    encoding_script = os.path.join(const.DEP2LABEL_PATH, 'encode_dep2labels.py')
     encoded_folder = model_folder + 'seq_files/'
     if not os.path.exists(encoded_folder):
         os.makedirs(encoded_folder)

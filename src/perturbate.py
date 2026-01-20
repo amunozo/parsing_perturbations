@@ -1,9 +1,10 @@
-from attacks import get_random_attack
 import os
 import random
 import tempfile
+import src.const as const
+from src.attacks import get_random_attack
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
 
 
 def perturbate_file(treebank, perturbation, file=None):

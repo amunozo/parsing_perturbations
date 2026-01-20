@@ -1,29 +1,30 @@
 import os
-from utils import prepare_data
-from sklearn.metrics import accuracy_score
 import tempfile
 import numpy as np
 import sys
+from sklearn.metrics import accuracy_score
+import src.const as const
+from src.utils import prepare_data
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
 
 def train(treebank, tags, device, learning_rate=0.02):
     """
     Train a tagger using NCRF++
     """
     if tags == 'none':
-        model_folder = 'tagger_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.TAGGER_MODELS, 'none_models', treebank) + '/'
         features = 'False'
     
     else:
-        model_folder = 'tagger_models/tags_models/'
+        model_folder = os.path.join(const.TAGGER_MODELS, 'tags_models')
         features = 'True'
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
         
     if not os.path.exists(model_folder):
         os.makedirs(model_folder)
@@ -85,11 +86,11 @@ def train(treebank, tags, device, learning_rate=0.02):
                  
     # Find word embeddings
     language = treebank.split('-')[0].replace('UD_', '').lower()
-    embeddings = 'embeddings/' + language
+    embeddings = os.path.join(const.EMBEDDINGS_FOLDER, language)
 
     # Create the config file
     # Now we localize where the main.py file is to train the model
-    main_py = "dep2label/main.py"
+    main_py = os.path.join(const.DEP2LABEL_PATH, "main.py")
     config_file = model_folder + 'config.txt'
 
     
@@ -166,7 +167,7 @@ def conllu_to_seq(file, tags):
         tags = 'upos'
 
     # Encode the files
-    encoding_script = 'dep2label/encode_dep2labels.py'
+    encoding_script = os.path.join(const.DEP2LABEL_PATH, 'encode_dep2labels.py')
     seq_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
 
     encoding_command = 'python "{}" --input "{}" --output "{}"  --encoding "2-planar-brackets-greedy" --mtl "3-task" --tag "{}"'.format(
@@ -190,7 +191,7 @@ def predict_tags(treebank, tags, gold_conllu_file, device=0, perturbation=0):
     model = model_folder + '/mod.model'
     model_dset = model_folder + '/mod.dset'
 
-    ncrf_file = ('dep2label/main.py')
+    ncrf_file = os.path.join(const.DEP2LABEL_PATH, 'main.py')
     
     test_seq_gold = conllu_to_seq(gold_conllu_file, tags)
     test_seq_pred = model_folder + '/seq_files/test_pred.seq'

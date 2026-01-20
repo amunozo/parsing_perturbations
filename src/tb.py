@@ -1,11 +1,12 @@
 import numpy as np
 import os
 import tempfile
-from perturbate import perturbate_file
-import tagger
+import src.tagger as tagger
+import src.const as const
+from src.perturbate import perturbate_file
 
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
 
 def train(treebank, tags, device):
     """
@@ -13,16 +14,16 @@ def train(treebank, tags, device):
     """
     # ¿Hace falta utilizar CoNLLx o CoNLLu?
     if tags == 'none':
-        model_folder = 'pointer_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.TAGGER_MODELS.replace('tagger', 'pointer'), 'none_models', treebank) + '/'
     
     else:
-        model_folder = 'pointer_models/tags_models/'
+        model_folder = os.path.join(const.TAGGER_MODELS.replace('tagger', 'pointer'), 'tags_models')
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
     
     if not os.path.exists(model_folder):
         os.makedirs(model_folder)
@@ -38,7 +39,7 @@ def train(treebank, tags, device):
     
     # Find word embeddings
     language = treebank.split('-')[0].replace('UD_', '').lower()
-    embeddings = 'embeddings/' + language
+    embeddings = os.path.join(const.EMBEDDINGS_FOLDER, language)
     if tags == 'none':
         config = 'SyntacticPointer/experiments/configs/parsing/l2r_none.json'
     else:
@@ -90,16 +91,16 @@ def conllu_to_conll(input_file, output_file, test=False) -> None:
 
 def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, device=0):
     if tags == 'none':
-        model_folder = 'pointer_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.TAGGER_MODELS.replace('tagger', 'pointer'), 'none_models', treebank) + '/'
     
     else:
-        model_folder = 'pointer_models/tags_models/'
+        model_folder = os.path.join(const.TAGGER_MODELS.replace('tagger', 'pointer'), 'tags_models')
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
 
     # Select train and dev file
     for filename in os.listdir(ud_folder + treebank):
@@ -220,7 +221,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, device=
     print('')
 
     # Create the .csv file if it doesn't exist
-    csv_file = 'scores.csv'
+    csv_file = const.SCORES_FILE
 
     if not os.path.exists(csv_file):
         with open(csv_file, 'w') as f:

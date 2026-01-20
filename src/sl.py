@@ -1,29 +1,30 @@
 import os
-from perturbate import perturbate_file
-import tagger
 import numpy as np
-from utils import prepare_data
 import tempfile
+import src.tagger as tagger
+import src.const as const
+from src.perturbate import perturbate_file
+from src.utils import prepare_data
 
-ud_folder = '/home/alberto/Universal Dependencies 2.9/ud-treebanks-v2.9/'
+ud_folder = const.UD_FOLDER
     
 def train(treebank, tags, device, encoding='2-planar-brackets-greedy', epochs=10, learning_rate = 0.02):
     """
     Train a SL dependency parser using a UD treebank
     """
     if tags == 'none':
-        model_folder = 'sl_models/none_models/' + treebank + '/'
+        model_folder = os.path.join(const.SL_MODELS, 'none_models', treebank) + '/'
         features = 'False'
     
     else:
-        model_folder = 'sl_models/tags_models/'
+        model_folder = os.path.join(const.SL_MODELS, 'tags_models')
         features = 'True'
         if tags == 'upos':
-            model_folder += 'UPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'UPOS', treebank) + '/'
         elif tags == 'xpos':
-            model_folder += 'XPOS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'XPOS', treebank) + '/'
         elif tags == 'feats':
-            model_folder += 'FEATS/' + treebank + '/'
+            model_folder = os.path.join(model_folder, 'FEATS', treebank) + '/'
         
     if not os.path.exists(model_folder):
         os.makedirs(model_folder)
@@ -44,11 +45,11 @@ def train(treebank, tags, device, encoding='2-planar-brackets-greedy', epochs=10
                 
     # Find word embeddings
     language = treebank.split('-')[0].replace('UD_', '').lower()
-    embeddings = 'embeddings/' + language
+    embeddings = os.path.join(const.EMBEDDINGS_FOLDER, language)
 
     # Create the config file
     # Now we localize where the main.py file is to train the model
-    main_py = "dep2label/main.py"
+    main_py = os.path.join(const.DEP2LABEL_PATH, "main.py")
     config_file = model_folder + 'config.txt'
 
     
@@ -151,7 +152,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, encodin
     #        test_seq_gold = encoded_folder + filename
     
 
-    ncrf_dir = 'dep2label'
+    ncrf_dir = const.DEP2LABEL_PATH
     test_seq_pred = model_folder + '/seq_files/test_pred.seq'
 
     # Perturbate the test set
@@ -185,7 +186,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, encodin
             output_conllu = tempfile.NamedTemporaryFile(mode='w', delete=False)
             output_seq = tempfile.NamedTemporaryFile(mode='w', delete=False)
 
-            decode_py = 'dep2label/decode.py'
+            decode_py = os.path.join(const.DEP2LABEL_PATH, 'decode.py')
             execute_decode = 'python  "{}" --test "{}" --gold "{}" --model "{}" --gpu True \
                 --output "{}" --encoding "{}" --ncrf "{}" --decode "{}"'.format(
                     decode_py,
@@ -230,7 +231,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, encodin
         output_conllu = tempfile.NamedTemporaryFile(mode='w', delete=False)
         output_seq = tempfile.NamedTemporaryFile(mode='w', delete=False)
         
-        decode_py = 'dep2label/decode.py'
+        decode_py = os.path.join(const.DEP2LABEL_PATH, 'decode.py')
         execute_decode = 'python  "{}" --test "{}" --gold "{}" --model "{}" --gpu True \
             --output "{}" --encoding "{}" --ncrf "{}" --decode "{}"'.format(
                 decode_py,
@@ -275,7 +276,7 @@ def evaluate(treebank, tags, perturbation, perturbed_tagging, epochs=10, encodin
     print('')
 
     # Create the .csv file if it doesn't exist
-    csv_file = 'scores.csv'
+    csv_file = const.SCORES_FILE
     if not os.path.exists(csv_file):
         with open(csv_file, 'w') as f:
             f.write('Treebank,Parser,Tags,Perturbed tagging,Perturbation,UAS,UAS std,LAS,LAS std,Tagger acc,Tagger acc std,Epochs\n')

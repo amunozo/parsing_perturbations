@@ -1,5 +1,11 @@
-from tagger import train
 import sys
+import os
+
+# Add the project root and src directory to the python path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from src.tagger import train
 
 treebank = sys.argv[1]
 tags = sys.argv[2]
