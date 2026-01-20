@@ -94,4 +94,4 @@ For any questions or issues, please contact the main author:
 
 ## Acknowledgments
 
-This work was supported by the European Research Council (ERC), ERDF/MICINN-AEI, and Xunta de Galicia.
+Mark was supported by a UKRI Future Leaders Fellowship (MR/T042001/1). This paper has received funding from ERDF/MICINN-AEI (SCANNER-UDC, PID2020-113230RB-C21), Xunta de Galicia (ED431C 2020/11), and Centro de Investigaci\'on de Galicia ``CITIC'', funded by Xunta de Galicia and the European Union (ERDF - Galicia 2014-2020 Program), by grant ED431G 2019/01
